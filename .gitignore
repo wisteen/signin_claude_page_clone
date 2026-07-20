@@ -1,7 +1,6 @@
 node_modules/
 dist/
 .vite/
-edge-debug-profile/
-preview-*.png
-vite-dev.log
-vite-dev.err
+*.png
+*.log
+*.err
