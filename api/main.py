@@ -1,8 +1,7 @@
-import json
 import os
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -10,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
-DATA_FILE = Path(__file__).with_name("submissions.json")
+DB_FILE = Path(os.getenv("SUBMISSIONS_DB", Path(__file__).with_name("submissions.db")))
 
 
 class SubmissionIn(BaseModel):
@@ -38,21 +37,28 @@ app.add_middleware(
 )
 
 
-def read_submissions() -> list[dict[str, Any]]:
-    if not DATA_FILE.exists():
-        return []
-
-    try:
-        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Submission store is invalid") from exc
+def get_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(DB_FILE)
+    connection.row_factory = sqlite3.Row
+    return connection
 
 
-def write_submissions(submissions: list[dict[str, Any]]) -> None:
-    DATA_FILE.write_text(
-        json.dumps(submissions, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+def init_db() -> None:
+    with get_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS submissions (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                submitted_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
 
 
 @app.post("/api/submissions", status_code=201)
@@ -62,18 +68,24 @@ def create_submission(payload: SubmissionIn) -> dict[str, str]:
     if not email or not payload.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
 
-    submissions = read_submissions()
-    entry = {
-        "id": str(uuid4()),
-        "email": email,
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
-    }
-    submissions.append(entry)
-    write_submissions(submissions)
+    entry_id = str(uuid4())
+    submitted_at = datetime.now(timezone.utc).isoformat()
 
-    return {"status": "ok", "id": entry["id"]}
+    with get_connection() as connection:
+        connection.execute(
+            "INSERT INTO submissions (id, email, submitted_at) VALUES (?, ?, ?)",
+            (entry_id, email, submitted_at),
+        )
+
+    return {"status": "ok", "id": entry_id}
 
 
 @app.get("/api/submissions")
-def list_submissions() -> list[dict[str, Any]]:
-    return read_submissions()
+def list_submissions() -> list[dict[str, str]]:
+    init_db()
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, email, submitted_at FROM submissions ORDER BY submitted_at DESC"
+        ).fetchall()
+
+    return [dict(row) for row in rows]

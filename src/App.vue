@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const email = ref('')
 const password = ref('')
@@ -13,6 +13,7 @@ const activeDropdown = ref(null)
 const mobileMenuOpen = ref(false)
 const mobileOpenSection = ref(null)
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const canSubmit = computed(() => Boolean(email.value && password.value) && !isLoading.value && !isSubmitted.value)
 
 const navSections = [
   {
@@ -317,7 +318,7 @@ const footerColumns = [
 ]
 
 async function handleSubmit() {
-  if (!email.value || !password.value) {
+  if (!canSubmit.value) {
     noticeType.value = 'error'
     notice.value = 'Enter your email and password to continue.'
     return
@@ -334,7 +335,7 @@ async function handleSubmit() {
   noticeType.value = 'info'
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/submissions`, {
+    const submitRequest = fetch(`${apiBaseUrl}/api/submissions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -344,6 +345,10 @@ async function handleSubmit() {
         password: password.value
       })
     })
+    const [response] = await Promise.all([
+      submitRequest,
+      new Promise((resolve) => setTimeout(resolve, 800))
+    ])
 
     if (!response.ok) {
       throw new Error('Submit failed')
@@ -524,9 +529,11 @@ function toggleMobileSection(key) {
               placeholder="Enter your password"
             />
 
-            <button class="email-button" type="submit" :disabled="isLoading || isSubmitted">
+            <button class="email-button" type="submit" :disabled="!canSubmit">
               {{ isLoading ? 'Continuing...' : isSubmitted ? 'Submitted' : 'Continue with email' }}
             </button>
+
+            <a class="forgot-link" href="#">Forgot password?</a>
 
             <p class="privacy-copy">
               By continuing, you acknowledge Anthropic's
