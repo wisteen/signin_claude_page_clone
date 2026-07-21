@@ -526,6 +526,19 @@ a {
   box-shadow: 0 0 0 3px rgba(213, 102, 74, 0.12);
 }
 
+.password-input {
+  margin-top: 12px;
+}
+
+.input-error {
+  border-color: #b4543f;
+}
+
+.input-error:focus {
+  border-color: #9d3e2e;
+  box-shadow: 0 0 0 3px rgba(180, 84, 63, 0.13);
+}
+
 .email-button {
   height: 42px;
   margin-top: 18px;
@@ -565,6 +578,19 @@ a {
   color: #5d554a;
   font-size: 12px;
   line-height: 1.35;
+  min-height: 16px;
+}
+
+.form-notice--error {
+  color: #9d3e2e;
+}
+
+.form-notice--success {
+  color: #4b5940;
+}
+
+.form-notice--empty {
+  visibility: hidden;
 }
 
 .desktop-button {
@@ -1303,7 +1329,7 @@ a {
 
   .auth-card {
     width: 100%;
-    padding: 34px 35px 38px;
+    padding: 30px 35px 34px;
     border-radius: 30px;
   }
 
@@ -1391,11 +1417,11 @@ a {
   }
 
   .auth-card {
-    padding-inline: 35px;
+    padding-inline: 25px;
   }
 
   .login-panel h1 {
-    font-size: 60px;
+    font-size: 56px;
   }
 
   .google-button {

