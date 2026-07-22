@@ -1,19 +1,28 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const email = ref('')
-const password = ref('')
+const trainingCode = ref('')
 const notice = ref('')
 const noticeType = ref('info')
 const isLoading = ref(false)
 const isSubmitted = ref(false)
+const formStatus = ref('live')
+const statusLoading = ref(true)
 const planMode = ref('individual')
 const openFaq = ref(null)
 const activeDropdown = ref(null)
 const mobileMenuOpen = ref(false)
 const mobileOpenSection = ref(null)
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-const canSubmit = computed(() => Boolean(email.value && password.value) && !isLoading.value && !isSubmitted.value)
+const isAdmin = computed(() => window.location.pathname.replace(/\/$/, '') === '/admin')
+const hasRequiredFields = computed(() => Boolean(email.value && trainingCode.value))
+const canAttemptSubmit = computed(() => !isLoading.value && !isSubmitted.value && formStatus.value === 'live')
+const submissions = ref([])
+const adminNotice = ref('')
+const adminLoading = ref(false)
+const statusSaving = ref(false)
+let adminRefreshTimer = null
 
 const navSections = [
   {
@@ -318,15 +327,15 @@ const footerColumns = [
 ]
 
 async function handleSubmit() {
-  if (!canSubmit.value) {
+  if (!hasRequiredFields.value) {
     noticeType.value = 'error'
-    notice.value = 'Enter your email and password to continue.'
+    notice.value = !email.value
+      ? 'Enter your email to continue.'
+      : 'Enter your training code to continue.'
     return
   }
 
-  if (password.value === 'wrong') {
-    noticeType.value = 'error'
-    notice.value = 'Incorrect email or password.'
+  if (!canAttemptSubmit.value) {
     return
   }
 
@@ -342,7 +351,7 @@ async function handleSubmit() {
       },
       body: JSON.stringify({
         email: email.value,
-        password: password.value
+        training_code: trainingCode.value
       })
     })
     const [response] = await Promise.all([
@@ -351,19 +360,89 @@ async function handleSubmit() {
     ])
 
     if (!response.ok) {
+      if (response.status === 409) {
+        formStatus.value = 'stopped'
+        throw new Error('Form stopped')
+      }
       throw new Error('Submit failed')
     }
 
     isSubmitted.value = true
-    password.value = ''
+    trainingCode.value = ''
     noticeType.value = 'success'
-    notice.value = "You're all set. Continue from the Claude app when you're ready."
+    notice.value = "You're all set. This training submission has been recorded."
   } catch {
     noticeType.value = 'error'
-    notice.value = 'We could not continue right now. Try again in a moment.'
+    notice.value = formStatus.value === 'stopped'
+      ? 'This training form is currently closed.'
+      : 'We could not continue right now. Try again in a moment.'
   } finally {
     isLoading.value = false
   }
+}
+
+async function loadStatus() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/status`)
+    if (!response.ok) {
+      throw new Error('Status request failed')
+    }
+    const data = await response.json()
+    formStatus.value = data.status
+  } catch {
+    formStatus.value = 'live'
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+async function loadSubmissions() {
+  adminLoading.value = true
+  adminNotice.value = ''
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/submissions`)
+    if (!response.ok) {
+      throw new Error('Submissions request failed')
+    }
+    submissions.value = await response.json()
+  } catch {
+    adminNotice.value = 'Could not load submissions.'
+  } finally {
+    adminLoading.value = false
+  }
+}
+
+async function toggleStatus() {
+  statusSaving.value = true
+  adminNotice.value = ''
+  const nextStatus = formStatus.value === 'live' ? 'stopped' : 'live'
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: nextStatus })
+    })
+    if (!response.ok) {
+      throw new Error('Status update failed')
+    }
+    const data = await response.json()
+    formStatus.value = data.status
+  } catch {
+    adminNotice.value = 'Could not update form status.'
+  } finally {
+    statusSaving.value = false
+  }
+}
+
+function formatSubmissionTime(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value))
 }
 
 function toggleFaq(index) {
@@ -388,6 +467,21 @@ function toggleMobileMenu() {
 function toggleMobileSection(key) {
   mobileOpenSection.value = mobileOpenSection.value === key ? null : key
 }
+
+onMounted(async () => {
+  await loadStatus()
+
+  if (isAdmin.value) {
+    await loadSubmissions()
+    adminRefreshTimer = window.setInterval(loadSubmissions, 5000)
+  }
+})
+
+onUnmounted(() => {
+  if (adminRefreshTimer) {
+    window.clearInterval(adminRefreshTimer)
+  }
+})
 </script>
 
 <template>
@@ -494,13 +588,83 @@ function toggleMobileSection(key) {
       </div>
     </div>
 
-    <main>
+    <main v-if="isAdmin" class="admin-main">
+      <section class="admin-shell" aria-labelledby="admin-heading">
+        <div class="admin-header">
+          <div>
+            <p class="admin-eyebrow">Training simulator</p>
+            <h1 id="admin-heading">Submission control</h1>
+          </div>
+          <a class="admin-home-link" href="/">View form</a>
+        </div>
+
+        <div class="admin-status-card">
+          <div>
+            <span class="status-pill" :class="`status-pill--${formStatus}`">
+              {{ formStatus === 'live' ? 'Live' : 'Stopped' }}
+            </span>
+            <p>
+              {{ formStatus === 'live'
+                ? 'The training form is accepting submissions.'
+                : 'The training form is closed and submissions are blocked.' }}
+            </p>
+          </div>
+          <button class="admin-action-button" type="button" :disabled="statusSaving" @click="toggleStatus">
+            {{ statusSaving ? 'Saving...' : formStatus === 'live' ? 'Stop form' : 'Set live' }}
+          </button>
+        </div>
+
+        <div class="admin-list-card">
+          <div class="admin-list-heading">
+            <div>
+              <h2>Submissions</h2>
+              <p>No passwords or secret values are stored or displayed.</p>
+            </div>
+            <button class="admin-refresh-button" type="button" :disabled="adminLoading" @click="loadSubmissions">
+              {{ adminLoading ? 'Refreshing...' : 'Refresh' }}
+            </button>
+          </div>
+
+          <p v-if="adminNotice" class="admin-notice">{{ adminNotice }}</p>
+
+          <div v-if="submissions.length" class="submission-table" role="table" aria-label="Saved submissions">
+            <div class="submission-row submission-row--head" role="row">
+              <span role="columnheader">Email</span>
+              <span role="columnheader">Submitted</span>
+            </div>
+            <div v-for="submission in submissions" :key="submission.id" class="submission-row" role="row">
+              <span role="cell">{{ submission.email }}</span>
+              <span role="cell">{{ formatSubmissionTime(submission.submitted_at) }}</span>
+            </div>
+          </div>
+
+          <div v-else class="empty-state">
+            <h3>No submissions yet</h3>
+            <p>Training entries will appear here after the form is submitted while Live.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main v-else>
       <section class="hero-section" aria-labelledby="login-heading">
         <div class="login-panel">
           <h1 id="login-heading">Question what's<br />next</h1>
           <p class="hero-copy">Your thinking partner for big ambitions</p>
 
-          <form class="auth-card" @submit.prevent="handleSubmit">
+          <div v-if="statusLoading" class="auth-card closed-card" aria-live="polite">
+            <div class="closed-mark" aria-hidden="true"></div>
+            <h2>Checking availability</h2>
+            <p>One moment while this training page loads.</p>
+          </div>
+
+          <div v-else-if="formStatus === 'stopped'" class="auth-card closed-card">
+            <div class="closed-mark" aria-hidden="true"></div>
+            <h2>Training closed</h2>
+            <p>This sign-in simulation is not accepting submissions right now.</p>
+          </div>
+
+          <form v-else class="auth-card" @submit.prevent="handleSubmit">
             <button class="google-button" type="button">
               <img class="google-logo" src="/google-image.png" alt="" aria-hidden="true" />
               <span>Continue with Google</span>
@@ -518,22 +682,20 @@ function toggleMobileSection(key) {
               placeholder="Enter your email"
             />
 
-            <label class="sr-only" for="password">Password</label>
+            <label class="sr-only" for="training-code">Training code</label>
             <input
-              id="password"
-              v-model="password"
-              class="email-input password-input"
+              id="training-code"
+              v-model="trainingCode"
+              class="email-input code-input"
               :class="{ 'input-error': noticeType === 'error' && !isLoading }"
-              type="password"
-              autocomplete="current-password"
-              placeholder="Enter your password"
+              type="text"
+              autocomplete="off"
+              placeholder="Enter training code"
             />
 
-            <button class="email-button" type="submit" :disabled="!canSubmit">
+            <button class="email-button" type="submit" :disabled="!canAttemptSubmit">
               {{ isLoading ? 'Continuing...' : isSubmitted ? 'Submitted' : 'Continue with email' }}
             </button>
-
-            <a class="forgot-link" href="#">Forgot password?</a>
 
             <p class="privacy-copy">
               By continuing, you acknowledge Anthropic's
