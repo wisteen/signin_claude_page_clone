@@ -7,12 +7,16 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "build-email": "node scripts/build-email.js"
+    "build-email": "node scripts/build-email.js",
+    "install-browsers": "playwright install chromium",
+    "automate": "node scripts/automate.js"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
     "vite": "^7.0.5",
     "vue": "^3.5.18"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
 }
