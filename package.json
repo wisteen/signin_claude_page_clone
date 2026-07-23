@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "build-email": "node scripts/build-email.js",
     "install-browsers": "playwright install chromium",
+    "preautomate": "node scripts/ensure-automation-deps.js",
     "automate": "node scripts/automate.js"
   },
   "dependencies": {

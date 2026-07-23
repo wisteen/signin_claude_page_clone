@@ -48,15 +48,17 @@ async function canFetch(url) {
 function startProcess(command, args, name) {
   let child
 
+  const isWindowsCommand = command.endsWith('.cmd')
+
   try {
-    child = spawn(command, args, {
+    child = spawn(isWindowsCommand ? 'cmd.exe' : command, isWindowsCommand ? ['/d', '/s', '/c', command, ...args] : args, {
       cwd: projectRoot,
       env: {
         ...process.env,
         VITE_API_BASE_URL: apiUrl,
         ALLOWED_ORIGINS: `${frontendUrl},http://localhost:5173,http://127.0.0.1:5173`
       },
-      shell: command.endsWith('.cmd'),
+      shell: false,
       stdio: ['ignore', 'pipe', 'pipe']
     })
   } catch (error) {
